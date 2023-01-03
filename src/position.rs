@@ -884,6 +884,21 @@ impl Position {
         pos
     }
 
+    pub fn make_nullmove(&self) -> Self {
+        let mut pos = self.clone();
+
+        pos.half_move_clock += 1;
+        pos.en_passant_file = None;
+
+        if pos.side_to_move == Side::Black {
+            pos.full_move_clock += 1;
+        }
+
+        pos.side_to_move = !pos.side_to_move;
+
+        pos
+    }
+
     #[inline]
     fn update_all_attacks(&mut self) {
         let side = self.side_to_move;

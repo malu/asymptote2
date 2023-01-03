@@ -376,6 +376,28 @@ impl<'a> Thread<'a> {
             }
         }
 
+        let eval = self.evaluate_current_position(ply);
+        // Null move pruning
+        if depth >= 6
+            && !self.position(ply).in_check()
+            && window.is_zero()
+            && eval >= window.beta()
+            && self
+                .eval
+                .non_pawn_material(self.position(ply).side_to_move())
+                > 0
+        {
+            let r = 2;
+            self.make_nullmove(ply);
+            let result = self.search(ply + 1, -window, depth - 1 - r).map(|v| -v);
+            self.unmake_nullmove();
+            if let SearchResult::Finished(score) = result {
+                if score >= window.beta() {
+                    return result;
+                }
+            }
+        }
+
         let killer_moves = self.frame(ply).killer_moves;
         let mut movepicker = MovePicker::new(entry.map(|entry| entry.best_move), killer_moves);
 
@@ -696,6 +718,37 @@ impl<'a> Thread<'a> {
         let frame = &mut self.stack[ply as usize];
         let mov = frame.current_move.take().unwrap();
         self.eval.unmake_move(&frame.position, mov);
+        self.repetitions.pop();
+    }
+
+    fn make_nullmove(&mut self, ply: i16) {
+        self.nodes += 1;
+
+        let frame = &mut self.stack[ply as usize];
+        frame.current_move = None;
+
+        let hash = self.hashes.make_nullmove(&frame.position) ^ frame.hash;
+        self.eval.make_nullmove();
+        let position = frame.position.make_nullmove();
+
+        if let Some(next_frame) = self.stack.get_mut(1 + ply as usize) {
+            next_frame.position = position;
+            next_frame.hash = hash;
+            next_frame.current_move = None;
+        }
+
+        if let Some(next_frame) = self.stack.get_mut(2 + ply as usize) {
+            next_frame.killer_moves = [None, None];
+        }
+
+        self.repetitions.push_reversible(hash);
+
+        self.max_ply = std::cmp::max(self.max_ply, 1 + ply as usize);
+        self.pv[1 + ply as usize].clear();
+    }
+
+    fn unmake_nullmove(&mut self) {
+        self.eval.unmake_nullmove();
         self.repetitions.pop();
     }
 
