@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::{
     eval::{Eval, Score},
     hash::{Hash, Hashes},
+    history::History,
     movegen::{
         generate_bishop_moves, generate_king_moves, generate_knight_moves, generate_pawn_moves,
         generate_queen_moves, generate_rook_moves, Move, MoveVec,
@@ -11,7 +12,7 @@ use crate::{
     position::Position,
     stop_condition::{StopCondition, TimeManager},
     tt::{self, Entry, TranspositionTable, EXACT_BOUND, LOWER_BOUND, UPPER_BOUND},
-    types::{Bitboard, Piece, Square},
+    types::{Bitboard, Piece, Side, Square},
 };
 
 type Depth = i8;
@@ -30,6 +31,7 @@ pub struct Thread<'a> {
     pv: Vec<MoveVec>,
     hashes: Hashes,
     tt: &'a TranspositionTable,
+    history: History,
     repetitions: Repetitions,
     start: std::time::Instant,
 
@@ -61,6 +63,7 @@ impl<'a> Thread<'a> {
             pv: vec![MoveVec::new(); 128],
             hashes: Hashes::new(),
             tt,
+            history: History::default(),
             repetitions: Repetitions::new(),
             start: std::time::Instant::now(),
 
@@ -138,7 +141,7 @@ impl<'a> Thread<'a> {
             // Generate all legal moves
             let mut movepicker =
                 MovePicker::new(entry.map(|entry| entry.best_move), Default::default());
-            while let Some((_, mov)) = movepicker.next(&self.position(ply)) {
+            while let Some((_, mov)) = movepicker.next(&self.position(ply), &self.history) {
                 if !self.position(ply).is_move_legal(mov) {
                     continue;
                 }
@@ -367,9 +370,11 @@ impl<'a> Thread<'a> {
         let killer_moves = self.frame(ply).killer_moves;
         let mut movepicker = MovePicker::new(entry.map(|entry| entry.best_move), killer_moves);
 
+        let mut failed_quiet_moves = MoveVec::new();
+
         let mut searched_moves = 0;
         let mut bound = UPPER_BOUND;
-        while let Some((mtype, mov)) = movepicker.next(&self.position(ply)) {
+        while let Some((mtype, mov)) = movepicker.next(&self.position(ply), &self.history) {
             if !self.position(ply).is_move_legal(mov) {
                 continue;
             }
@@ -435,10 +440,20 @@ impl<'a> Thread<'a> {
                     if score >= window.beta() {
                         if mtype == MoveType::Killer || mtype == MoveType::Quiet {
                             self.store_killer_move(ply, mov);
+                            self.update_history(
+                                self.position(ply).side_to_move(),
+                                depth,
+                                mov,
+                                &failed_quiet_moves,
+                            );
                         }
 
                         bound = LOWER_BOUND;
                         break;
+                    } else {
+                        if mtype == MoveType::Quiet {
+                            failed_quiet_moves.push(mov);
+                        }
                     }
                 }
             }
@@ -673,6 +688,17 @@ impl<'a> Thread<'a> {
             killers[1] = killers[0];
             killers[0] = Some(mov);
         }
+    }
+
+    fn update_history(
+        &mut self,
+        side: Side,
+        depth: i8,
+        best_move: Move,
+        failed_quiet_moves: &[Move],
+    ) {
+        self.history.decrease_score(side, failed_quiet_moves, depth);
+        self.history.increase_score(side, best_move, depth);
     }
 }
 
