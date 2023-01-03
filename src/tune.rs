@@ -1,7 +1,7 @@
 use crate::{
     eval::{
-        eg, mg, EScore, Eval, Score, BISHOP_PST, KING_PST, KNIGHT_PST, PAWN_PST, PIECE_VALUES,
-        QUEEN_PST, ROOK_PST, S,
+        eg, mg, EScore, Eval, Score, BISHOP_MOBILITY, BISHOP_PST, KING_PST, KNIGHT_MOBILITY,
+        KNIGHT_PST, PAWN_PST, PIECE_VALUES, QUEEN_PST, ROOK_MOBILITY, ROOK_PST, S,
     },
     position::Position,
     random::Xoshiro,
@@ -14,13 +14,17 @@ pub struct Trace {
     result: f32,
     pub phase: i16,
 
-    pub material: Material<true>,
-    pub pawn_pst: SymmetricSquareMap<true>,
-    pub knight_pst: SymmetricSquareMap<true>,
-    pub bishop_pst: SymmetricSquareMap<true>,
-    pub rook_pst: SymmetricSquareMap<true>,
-    pub queen_pst: SymmetricSquareMap<true>,
-    pub king_pst: SymmetricSquareMap<true>,
+    pub material: Material<false>,
+    pub pawn_pst: SymmetricSquareMap<false>,
+    pub knight_pst: SymmetricSquareMap<false>,
+    pub bishop_pst: SymmetricSquareMap<false>,
+    pub rook_pst: SymmetricSquareMap<false>,
+    pub queen_pst: SymmetricSquareMap<false>,
+    pub king_pst: SymmetricSquareMap<false>,
+
+    pub knight_mobility: Array<false, 9>,
+    pub bishop_mobility: Array<false, 14>,
+    pub rook_mobility: Array<false, 15>,
 }
 
 impl Default for Trace {
@@ -36,6 +40,10 @@ impl Default for Trace {
             rook_pst: SymmetricSquareMap::new("ROOK_PST", &ROOK_PST),
             queen_pst: SymmetricSquareMap::new("QUEEN_PST", &QUEEN_PST),
             king_pst: SymmetricSquareMap::new("KING_PST", &KING_PST),
+
+            knight_mobility: Array::new("KNIGHT_MOBILITY", &KNIGHT_MOBILITY),
+            bishop_mobility: Array::new("BISHOP_MOBILITY", &BISHOP_MOBILITY),
+            rook_mobility: Array::new("ROOK_MOBILITY", &ROOK_MOBILITY),
         }
     }
 }
@@ -61,6 +69,9 @@ impl Trace {
         f(Box::new(&self.rook_pst));
         f(Box::new(&self.queen_pst));
         f(Box::new(&self.king_pst));
+        f(Box::new(&self.knight_mobility));
+        f(Box::new(&self.bishop_mobility));
+        f(Box::new(&self.rook_mobility));
     }
 }
 
@@ -277,6 +288,7 @@ impl<const ENABLED: bool> SymmetricSquareMap<ENABLED> {
         }
     }
 }
+
 pub struct SymmetricSquareMapSchema {
     name: &'static str,
     source: &'static SquareMap<EScore>,
@@ -400,6 +412,97 @@ impl Schema for SymmetricSquareMapSchema {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct Array<const ENABLED: bool, const N: usize> {
+    pub inner: [[i8; N]; 2],
+    name: &'static str,
+    source: &'static [EScore; N],
+}
+
+impl<const ENABLED: bool, const N: usize> Array<ENABLED, N> {
+    fn new(name: &'static str, source: &'static [EScore; N]) -> Self {
+        Self {
+            inner: [[0; N]; 2],
+            name,
+            source,
+        }
+    }
+}
+
+pub struct ArraySchema<const N: usize> {
+    name: &'static str,
+    source: &'static [EScore; N],
+}
+
+impl<const ENABLED: bool, const N: usize> Tunable for Array<ENABLED, N> {
+    fn enabled(&self) -> bool {
+        ENABLED
+    }
+
+    fn compact(&self) -> Vec<i8> {
+        let w = Side::White as usize;
+        let b = Side::Black as usize;
+        let mut result = Vec::with_capacity(N);
+        for i in 0..N {
+            result.push(self.inner[w][i] - self.inner[b][i]);
+        }
+
+        result
+    }
+
+    fn schema(&self) -> Box<dyn Schema> {
+        Box::new(ArraySchema {
+            name: self.name,
+            source: self.source,
+        })
+    }
+}
+
+impl<const N: usize> Schema for ArraySchema<N> {
+    fn num_parameters(&self) -> usize {
+        N
+    }
+
+    fn initial_parameter_values(&self) -> Vec<EScore> {
+        self.source.iter().copied().collect()
+    }
+
+    fn gradients(
+        &self,
+        _parameters: &[(f32, f32)],
+        trace: &[i8],
+        f: f32,
+        phase: f32,
+        g: &mut [(f32, f32)],
+    ) {
+        g.iter_mut().zip(trace).for_each(|(g, t)| {
+            let t = *t as f32;
+            g.0 += t * f * phase / 62.;
+            g.1 += t * f * (62. - phase) / 62.;
+        });
+    }
+
+    fn constraints(&self, _parameters: &mut [(f32, f32)]) {}
+
+    fn print(&self, values: &[(f32, f32)]) {
+        println!("#[rustfmt::skip]");
+        println!("pub static {name}: [EScore; {N}] = [", name = self.name);
+        for i in 0..N {
+            if i % 8 == 0 {
+                if i > 0 {
+                    println!();
+                }
+                print!("    ");
+            }
+            print!(
+                "S({:>4}, {:>4}), ",
+                values[i].0 as Score, values[i].1 as Score
+            );
+        }
+        println!();
+        println!("];");
+    }
+}
 pub struct Tuner {
     k: f32,
 

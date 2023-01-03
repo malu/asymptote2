@@ -1,5 +1,5 @@
 use crate::{
-    movegen::Move,
+    movegen::{bishop_from, rook_from, Move, KNIGHT_ATTACKS},
     position::Position,
     tune::Trace,
     types::{Bitboard, File, Piece, PieceMap, Rank, Side, Square, SquareMap},
@@ -90,6 +90,24 @@ pub static KING_PST: SquareMap<EScore> = SquareMap::visual([
     S(  55,  -76), S(  72,  -49), S(   0,  -25), S(  34,  -46), S(  34,  -46), S(   0,  -25), S(  72,  -49), S(  55,  -76),
 ]);
 
+#[rustfmt::skip]
+pub static KNIGHT_MOBILITY: [EScore; 9] = [
+    S( -18,   -5), S( -11,   -9), S(  -1,   -4), S(  -4,    2), S(   0,    1), S(   3,    4), S(   8,    0), S(   8,    0),
+    S(   6,  -11),
+];
+
+#[rustfmt::skip]
+pub static BISHOP_MOBILITY: [EScore; 14] = [
+    S( -19,  -25), S( -16,  -31), S(  -5,  -30), S(  -6,  -18), S(  -4,   -9), S(   2,   -3), S(   2,    1), S(   2,    9),
+    S(   5,    8), S(   5,    5), S(   3,    6), S(   6,    2), S(   0,    2), S(   1,    3),
+];
+
+#[rustfmt::skip]
+pub static ROOK_MOBILITY: [EScore; 15] = [
+    S( -25,  -33), S( -20,  -36), S( -21,  -23), S( -20,  -20), S( -17,  -15), S( -16,  -11), S(  -9,   -8), S(  -3,   -7),
+    S(  -1,    0), S(   7,   -1), S(  18,    0), S(  22,    1), S(  28,    6), S(  26,   13), S(  19,    9),
+];
+
 #[derive(Clone, Debug)]
 pub struct Eval {
     material: [PieceMap<u8>; 2],
@@ -132,6 +150,7 @@ impl Eval {
         let mut score = S(0, 0);
 
         score += self.material::<true>() - self.material::<false>();
+        score += self.mobility::<true>(pos) - self.mobility::<false>(pos);
         score += self.pst::<true>() - self.pst::<false>();
 
         #[cfg(feature = "tune")]
@@ -154,6 +173,54 @@ impl Eval {
         let side = Side::white(WHITE);
         for (_piece, count, value) in self.material[side as usize].zip(&PIECE_VALUES).iter() {
             score += i32::from(*count) * value;
+        }
+
+        score
+    }
+
+    fn mobility<const WHITE: bool>(&mut self, pos: &Position) -> EScore {
+        let mut score = S(0, 0);
+        let side = Side::white(WHITE);
+        let us = pos.pieces(side);
+
+        let defended_by_their_pawns = pos.attacks(!side, Piece::Pawn);
+        for knight in pos.knights() & pos.pieces(side) {
+            let attacked = KNIGHT_ATTACKS[knight];
+            let mobility = attacked & !us & !defended_by_their_pawns;
+            let mobility = mobility.popcount();
+
+            score += KNIGHT_MOBILITY[mobility];
+
+            #[cfg(feature = "tune")]
+            {
+                self.trace.knight_mobility.inner[side as usize][mobility] += 1;
+            }
+        }
+
+        for bishop in pos.bishops() & pos.pieces(side) {
+            let attacked = bishop_from(bishop, pos.all_pieces());
+            let mobility = attacked & !us;
+            let mobility = mobility.popcount();
+
+            score += BISHOP_MOBILITY[mobility];
+
+            #[cfg(feature = "tune")]
+            {
+                self.trace.bishop_mobility.inner[side as usize][mobility] += 1;
+            }
+        }
+
+        for rook in pos.rooks() & pos.pieces(side) {
+            let attacked = rook_from(rook, pos.all_pieces());
+            let mobility = attacked & !us;
+            let mobility = mobility.popcount();
+
+            score += ROOK_MOBILITY[mobility];
+
+            #[cfg(feature = "tune")]
+            {
+                self.trace.rook_mobility.inner[side as usize][mobility] += 1;
+            }
         }
 
         score

@@ -362,6 +362,18 @@ impl Position {
         self.all_pieces
     }
 
+    pub const fn attacks(&self, side: Side, piece: Piece) -> Bitboard {
+        let attacks = &self.attacks[side as usize];
+        match piece {
+            Piece::Pawn => attacks.pawns,
+            Piece::Knight => attacks.knights,
+            Piece::Bishop => attacks.bishops,
+            Piece::Rook => attacks.rooks,
+            Piece::Queen => attacks.queens,
+            Piece::King => attacks.kings,
+        }
+    }
+
     pub const fn en_passant_file(&self) -> Option<File> {
         self.en_passant_file
     }
