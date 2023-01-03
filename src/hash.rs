@@ -167,6 +167,19 @@ impl Hashes {
         hash
     }
 
+    pub fn make_nullmove(&self, pos: &Position) -> Hash {
+        let mut hash = 0;
+
+        // Remove current en passant hash
+        if let Some(ep) = pos.en_passant_file() {
+            hash ^= self.en_passant[ep as usize];
+        }
+
+        hash ^= self.side_to_move;
+
+        hash
+    }
+
     pub fn compute_hash_for_position(&self, position: &Position) -> Hash {
         let mut hash = Hash::default();
 

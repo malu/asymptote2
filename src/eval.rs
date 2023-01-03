@@ -255,6 +255,16 @@ impl Eval {
         phase
     }
 
+    pub fn non_pawn_material(&self, side: Side) -> u8 {
+        let mut result = 0;
+        result += self.material[side as usize][Piece::Knight];
+        result += self.material[side as usize][Piece::Bishop];
+        result += self.material[side as usize][Piece::Rook];
+        result += self.material[side as usize][Piece::Queen];
+
+        result
+    }
+
     // `position` is the position _before_ the move was made
     pub fn make_move(&mut self, position: &Position, mov: Move) {
         let side = position.side_to_move() as usize;
@@ -438,6 +448,9 @@ impl Eval {
             }
         }
     }
+
+    pub fn make_nullmove(&mut self) {}
+    pub fn unmake_nullmove(&mut self) {}
 
     #[cfg(feature = "tune")]
     fn trace_incrementals(&mut self, pos: &Position) {
