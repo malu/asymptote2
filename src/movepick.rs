@@ -1,4 +1,7 @@
+use arrayvec::ArrayVec;
+
 use crate::{
+    history::History,
     movegen::{
         generate_bishop_moves, generate_king_moves, generate_knight_moves, generate_pawn_moves,
         generate_queen_moves, generate_rook_moves, Move, MoveVec,
@@ -32,6 +35,7 @@ pub struct MovePicker {
     stage: Stage,
     tt_move: Option<Move>,
     moves: MoveVec,
+    scores: ArrayVec<i16, 256>,
     index: usize,
     killer_moves: [Option<Move>; 2],
 }
@@ -42,12 +46,13 @@ impl MovePicker {
             stage: Stage::TtMove,
             tt_move,
             moves: MoveVec::new(),
+            scores: ArrayVec::new(),
             index: 0,
             killer_moves,
         }
     }
 
-    pub fn next(&mut self, position: &Position) -> Option<(MoveType, Move)> {
+    pub fn next(&mut self, position: &Position, history: &History) -> Option<(MoveType, Move)> {
         loop {
             match self.stage {
                 Stage::TtMove => {
@@ -109,6 +114,7 @@ impl MovePicker {
                 }
                 Stage::GenerateQuiet => {
                     self.moves.clear();
+                    self.scores.clear();
 
                     let side = position.side_to_move();
                     generate_pawn_moves(
@@ -126,14 +132,30 @@ impl MovePicker {
                     generate_queen_moves(position, !position.pieces(!side), &mut self.moves);
                     generate_king_moves(position, !position.pieces(!side), &mut self.moves);
 
+                    self.scores.extend(
+                        self.moves
+                            .iter()
+                            .map(|mov| history.get_score(position.side_to_move(), *mov)),
+                    );
+
                     self.stage = Stage::Quiet;
                     self.index = 0;
                     continue;
                 }
                 Stage::Quiet => {
-                    if let Some(mov) = self.moves.get(self.index) {
+                    let next_move = self
+                        .moves
+                        .iter()
+                        .zip(self.scores.iter())
+                        .enumerate()
+                        .skip(self.index)
+                        .max_by_key(|(_, (_, score))| *score)
+                        .map(|(i, (mov, score))| (i, *mov, *score));
+                    if let Some((i, mov, _score)) = next_move {
+                        self.moves.swap(self.index, i);
+                        self.scores.swap(self.index, i);
                         self.index += 1;
-                        return Some((MoveType::Quiet, *mov));
+                        return Some((MoveType::Quiet, mov));
                     }
 
                     self.stage = Stage::GenerateBadNoisy;

@@ -3,6 +3,7 @@
 mod bench;
 mod eval;
 mod hash;
+mod history;
 mod magic;
 mod movegen;
 mod movepick;
