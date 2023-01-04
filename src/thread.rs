@@ -32,6 +32,7 @@ pub struct Thread<'a> {
     hashes: Hashes,
     tt: &'a TranspositionTable,
     history: History,
+    lmr: [[i8; 64]; 64],
     repetitions: Repetitions,
     start: std::time::Instant,
 
@@ -53,6 +54,13 @@ impl<'a> Thread<'a> {
         let eval = Eval::from(&Position::default());
         let stack = vec![Frame::default(); MAX_PLY as usize + 1];
 
+        let mut lmr = [[0; 64]; 64];
+        for d in 2..64 {
+            for m in 1..64 {
+                lmr[d][m] = ((d as f32).ln() * (m as f32).ln() / 3.) as i8;
+            }
+        }
+
         let mut thread = Self {
             eval,
             stack,
@@ -64,6 +72,7 @@ impl<'a> Thread<'a> {
             hashes: Hashes::new(),
             tt,
             history: History::default(),
+            lmr,
             repetitions: Repetitions::new(),
             start: std::time::Instant::now(),
 
@@ -387,14 +396,32 @@ impl<'a> Thread<'a> {
             }
             let mut score;
 
+            let mut reduction = 0;
+            if depth > 2 && mtype == MoveType::Quiet {
+                reduction +=
+                    self.lmr[std::cmp::min(searched_moves, 63)][std::cmp::min(depth, 63) as usize];
+
+                reduction = reduction.clamp(0, depth - 1);
+            }
+
             if searched_moves == 0 {
                 score = self
                     .search(ply + 1, -window, depth + extension - 1)
                     .map(|v| -v)
             } else {
                 score = self
-                    .search(ply + 1, -(window.zero()), depth + extension - 1)
+                    .search(ply + 1, -(window.zero()), depth + extension - reduction - 1)
                     .map(|v| -v);
+
+                if score
+                    .finished()
+                    .filter(|score| score > &window.alpha())
+                    .is_some()
+                {
+                    score = self
+                        .search(ply + 1, -(window.zero()), depth + extension - 1)
+                        .map(|v| -v);
+                }
 
                 if score
                     .finished()
