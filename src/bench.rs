@@ -63,7 +63,7 @@ const BENCH_POSITIONS: [&str; 50] = [
 
 pub fn run() {
     let mut nodes = 0;
-    let stop_condition = StopCondition::Depth { limit: 7 };
+    let stop_condition = StopCondition::Depth { limit: 8 };
 
     let mut duration = Duration::default();
     for (i, fen) in BENCH_POSITIONS.into_iter().enumerate() {
