@@ -113,6 +113,11 @@ pub static PASSED_PAWN_ON_RANK: [EScore; 8] = [
     S(   0,    0), S(  10,  -15), S(  -3,   -7), S( -16,   17), S(   0,   43), S(  22,   67), S(   0,    0), S(   0,    0),
 ];
 
+#[rustfmt::skip]
+pub static ROOK_PAWN_FILE: [EScore; 4] = [
+    S(  29,   -5), S(   5,   -5), S(  -3,   10), S( -10,   -7),
+];
+
 #[derive(Clone, Debug)]
 pub struct Eval {
     material: [PieceMap<u8>; 2],
@@ -156,6 +161,7 @@ impl Eval {
 
         score += self.material::<true>() - self.material::<false>();
         score += self.mobility::<true>(pos) - self.mobility::<false>(pos);
+        score += self.rooks::<true>(pos) - self.rooks::<false>(pos);
         score += self.pst::<true>() - self.pst::<false>();
         score += self.pawns::<true>(pos) - self.pawns::<false>(pos);
 
@@ -260,6 +266,28 @@ impl Eval {
                         self.trace.passed_pawn_on_rank.inner[side as usize][normalized_rank] += 1;
                     }
                 }
+            }
+        }
+
+        score
+    }
+
+    fn rooks<const WHITE: bool>(&mut self, pos: &Position) -> EScore {
+        let mut score = S(0, 0);
+        let side = Side::white(WHITE);
+        let us = pos.pieces(side);
+        let them = pos.pieces(!side);
+
+        for rook in pos.rooks() & us {
+            let file_bb = rook.file().as_bb();
+            let file_has_our_pawn = (pos.pawns() & us & file_bb).at_least_one();
+            let file_has_their_pawn = (pos.pawns() & them & file_bb).at_least_one();
+            let rook_pawn_index =
+                usize::from(2 * u8::from(file_has_their_pawn) + u8::from(file_has_our_pawn));
+            score += ROOK_PAWN_FILE[rook_pawn_index];
+            #[cfg(feature = "tune")]
+            {
+                self.trace.rook_pawn_file.inner[side as usize][rook_pawn_index] += 1;
             }
         }
 

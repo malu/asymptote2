@@ -2,7 +2,7 @@ use crate::{
     eval::{
         eg, mg, EScore, Eval, Score, BISHOP_MOBILITY, BISHOP_PST, KING_PST, KNIGHT_MOBILITY,
         KNIGHT_PST, PASSED_PAWN_ON_RANK, PAWN_PST, PIECE_VALUES, QUEEN_PST, ROOK_MOBILITY,
-        ROOK_PST, S,
+        ROOK_PAWN_FILE, ROOK_PST, S,
     },
     position::Position,
     random::Xoshiro,
@@ -28,6 +28,8 @@ pub struct Trace {
     pub rook_mobility: Array<false, 15>,
 
     pub passed_pawn_on_rank: Array<false, 8>,
+
+    pub rook_pawn_file: Array<false, 4>,
 }
 
 impl Default for Trace {
@@ -36,6 +38,7 @@ impl Default for Trace {
             eval: EScore::default(),
             result: 0.,
             phase: 0,
+
             material: Material::default(),
             pawn_pst: SymmetricSquareMap::new("PAWN_PST", &PAWN_PST),
             knight_pst: SymmetricSquareMap::new("KNIGHT_PST", &KNIGHT_PST),
@@ -49,6 +52,8 @@ impl Default for Trace {
             rook_mobility: Array::new("ROOK_MOBILITY", &ROOK_MOBILITY),
 
             passed_pawn_on_rank: Array::new("PASSED_PAWN_ON_RANK", &PASSED_PAWN_ON_RANK),
+
+            rook_pawn_file: Array::new("ROOK_PAWN_FILE", &ROOK_PAWN_FILE),
         }
     }
 }
@@ -78,6 +83,7 @@ impl Trace {
         f(Box::new(&self.bishop_mobility));
         f(Box::new(&self.rook_mobility));
         f(Box::new(&self.passed_pawn_on_rank));
+        f(Box::new(&self.rook_pawn_file));
     }
 }
 
