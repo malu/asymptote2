@@ -21,12 +21,12 @@ pub const PIECE_VALUES: PieceMap<EScore> = PieceMap::new([
 #[rustfmt::skip]
 pub static PAWN_PST: SquareMap<EScore> = SquareMap::visual([
     S(   0,    0), S(   0,    0), S(   0,    0), S(   0,    0), S(   0,    0), S(   0,    0), S(   0,    0), S(   0,    0),
-    S(  35,  176), S(  63,  162), S(  51,  132), S(  59,  120), S(  59,  120), S(  51,  132), S(  63,  162), S(  35,  176),
-    S( -45,   65), S(  -8,   65), S(  29,   29), S(  38,   20), S(  38,   20), S(  29,   29), S(  -8,   65), S( -45,   65),
-    S( -42,  -18), S(   5,  -29), S(   0,  -43), S(  19,  -57), S(  19,  -57), S(   0,  -43), S(   5,  -29), S( -42,  -18),
-    S( -50,  -42), S(  -8,  -47), S( -12,  -62), S(  11,  -67), S(  11,  -67), S( -12,  -62), S(  -8,  -47), S( -50,  -42),
-    S( -41,  -53), S(   1,  -51), S(  -8,  -63), S(  -9,  -54), S(  -9,  -54), S(  -8,  -63), S(   1,  -51), S( -41,  -53),
-    S( -52,  -46), S(   5,  -47), S(  -9,  -46), S( -30,  -41), S( -30,  -41), S(  -9,  -46), S(   5,  -47), S( -52,  -46),
+    S(  28,  215), S(  65,  202), S(  52,  173), S(  60,  162), S(  60,  162), S(  52,  173), S(  65,  202), S(  28,  215),
+    S( -48,   33), S( -17,   32), S(  17,   -2), S(  17,  -20), S(  17,  -20), S(  17,   -2), S( -17,   32), S( -48,   33),
+    S( -39,  -28), S(   4,  -37), S(  -1,  -53), S(  19,  -69), S(  19,  -69), S(  -1,  -53), S(   4,  -37), S( -39,  -28),
+    S( -45,  -43), S(  -8,  -43), S(  -8,  -60), S(  13,  -66), S(  13,  -66), S(  -8,  -60), S(  -8,  -43), S( -45,  -43),
+    S( -36,  -52), S(   2,  -49), S(  -5,  -59), S(  -2,  -54), S(  -2,  -54), S(  -5,  -59), S(   2,  -49), S( -36,  -52),
+    S( -46,  -47), S(  10,  -49), S(  -9,  -46), S( -21,  -33), S( -21,  -33), S(  -9,  -46), S(  10,  -49), S( -46,  -47),
     S(   0,    0), S(   0,    0), S(   0,    0), S(   0,    0), S(   0,    0), S(   0,    0), S(   0,    0), S(   0,    0),
 ]);
 
@@ -108,6 +108,11 @@ pub static ROOK_MOBILITY: [EScore; 15] = [
     S(  -1,    0), S(   7,   -1), S(  18,    0), S(  22,    1), S(  28,    6), S(  26,   13), S(  19,    9),
 ];
 
+#[rustfmt::skip]
+pub static PASSED_PAWN_ON_RANK: [EScore; 8] = [
+    S(   0,    0), S(  10,  -15), S(  -3,   -7), S( -16,   17), S(   0,   43), S(  22,   67), S(   0,    0), S(   0,    0),
+];
+
 #[derive(Clone, Debug)]
 pub struct Eval {
     material: [PieceMap<u8>; 2],
@@ -152,6 +157,7 @@ impl Eval {
         score += self.material::<true>() - self.material::<false>();
         score += self.mobility::<true>(pos) - self.mobility::<false>(pos);
         score += self.pst::<true>() - self.pst::<false>();
+        score += self.pawns::<true>(pos) - self.pawns::<false>(pos);
 
         #[cfg(feature = "tune")]
         {
@@ -220,6 +226,40 @@ impl Eval {
             #[cfg(feature = "tune")]
             {
                 self.trace.rook_mobility.inner[side as usize][mobility] += 1;
+            }
+        }
+
+        score
+    }
+
+    fn pawns<const WHITE: bool>(&mut self, pos: &Position) -> EScore {
+        let mut score = S(0, 0);
+        let side = Side::white(WHITE);
+        let us = pos.pieces(side);
+        let them = pos.pieces(!side);
+
+        for pawn in pos.pawns() & us {
+            let file = pawn.file().as_bb();
+            let corridor = PAWN_CORRIDOR[side as usize][pawn];
+            let frontspan = file & corridor;
+
+            let doubled = (frontspan & pos.pawns() & us).at_least_one();
+            let passed = (corridor & pos.pawns() & them).is_empty();
+
+            if passed && !doubled {
+                let normalized_rank = pawn.normalize(side).rank() as usize;
+
+                // Any pawn on rank 7 is a passer. No need to score or trace (which could lead to
+                // issues when tuning at the same time as the pawn PST, because it traces the same
+                // condition).
+                // normalized_rank starts at 0 for rank 1, therefore we need to compare with 6.
+                if normalized_rank < 6 {
+                    score += PASSED_PAWN_ON_RANK[normalized_rank];
+                    #[cfg(feature = "tune")]
+                    {
+                        self.trace.passed_pawn_on_rank.inner[side as usize][normalized_rank] += 1;
+                    }
+                }
             }
         }
 
@@ -544,6 +584,159 @@ fn interpolate(score: EScore, phase: i16) -> Score {
     ((mg * phase + eg * (62 - phase)) / 62) as Score
 }
 
+static PAWN_CORRIDOR: [SquareMap<Bitboard>; 2] = [
+    // White
+    SquareMap::new([
+        // Rank 1
+        Bitboard::new(0x03_03_03_03_03_03_03_00),
+        Bitboard::new(0x07_07_07_07_07_07_07_00),
+        Bitboard::new(0x0E_0E_0E_0E_0E_0E_0E_00),
+        Bitboard::new(0x1C_1C_1C_1C_1C_1C_1C_00),
+        Bitboard::new(0x38_38_38_38_38_38_38_00),
+        Bitboard::new(0x70_70_70_70_70_70_70_00),
+        Bitboard::new(0xE0_E0_E0_E0_E0_E0_E0_00),
+        Bitboard::new(0xC0_C0_C0_C0_C0_C0_C0_00),
+        // Rank 2
+        Bitboard::new(0x03_03_03_03_03_03_00_00),
+        Bitboard::new(0x07_07_07_07_07_07_00_00),
+        Bitboard::new(0x0E_0E_0E_0E_0E_0E_00_00),
+        Bitboard::new(0x1C_1C_1C_1C_1C_1C_00_00),
+        Bitboard::new(0x38_38_38_38_38_38_00_00),
+        Bitboard::new(0x70_70_70_70_70_70_00_00),
+        Bitboard::new(0xE0_E0_E0_E0_E0_E0_00_00),
+        Bitboard::new(0xC0_C0_C0_C0_C0_C0_00_00),
+        // Rank 3
+        Bitboard::new(0x03_03_03_03_03_00_00_00),
+        Bitboard::new(0x07_07_07_07_07_00_00_00),
+        Bitboard::new(0x0E_0E_0E_0E_0E_00_00_00),
+        Bitboard::new(0x1C_1C_1C_1C_1C_00_00_00),
+        Bitboard::new(0x38_38_38_38_38_00_00_00),
+        Bitboard::new(0x70_70_70_70_70_00_00_00),
+        Bitboard::new(0xE0_E0_E0_E0_E0_00_00_00),
+        Bitboard::new(0xC0_C0_C0_C0_C0_00_00_00),
+        // Rank 4
+        Bitboard::new(0x03_03_03_03_00_00_00_00),
+        Bitboard::new(0x07_07_07_07_00_00_00_00),
+        Bitboard::new(0x0E_0E_0E_0E_00_00_00_00),
+        Bitboard::new(0x1C_1C_1C_1C_00_00_00_00),
+        Bitboard::new(0x38_38_38_38_00_00_00_00),
+        Bitboard::new(0x70_70_70_70_00_00_00_00),
+        Bitboard::new(0xE0_E0_E0_E0_00_00_00_00),
+        Bitboard::new(0xC0_C0_C0_C0_00_00_00_00),
+        // Rank 5
+        Bitboard::new(0x03_03_03_00_00_00_00_00),
+        Bitboard::new(0x07_07_07_00_00_00_00_00),
+        Bitboard::new(0x0E_0E_0E_00_00_00_00_00),
+        Bitboard::new(0x1C_1C_1C_00_00_00_00_00),
+        Bitboard::new(0x38_38_38_00_00_00_00_00),
+        Bitboard::new(0x70_70_70_00_00_00_00_00),
+        Bitboard::new(0xE0_E0_E0_00_00_00_00_00),
+        Bitboard::new(0xC0_C0_C0_00_00_00_00_00),
+        // Rank 6
+        Bitboard::new(0x03_03_00_00_00_00_00_00),
+        Bitboard::new(0x07_07_00_00_00_00_00_00),
+        Bitboard::new(0x0E_0E_00_00_00_00_00_00),
+        Bitboard::new(0x1C_1C_00_00_00_00_00_00),
+        Bitboard::new(0x38_38_00_00_00_00_00_00),
+        Bitboard::new(0x70_70_00_00_00_00_00_00),
+        Bitboard::new(0xE0_E0_00_00_00_00_00_00),
+        Bitboard::new(0xC0_C0_00_00_00_00_00_00),
+        // Rank 7
+        Bitboard::new(0x03_00_00_00_00_00_00_00),
+        Bitboard::new(0x07_00_00_00_00_00_00_00),
+        Bitboard::new(0x0E_00_00_00_00_00_00_00),
+        Bitboard::new(0x1C_00_00_00_00_00_00_00),
+        Bitboard::new(0x38_00_00_00_00_00_00_00),
+        Bitboard::new(0x70_00_00_00_00_00_00_00),
+        Bitboard::new(0xE0_00_00_00_00_00_00_00),
+        Bitboard::new(0xC0_00_00_00_00_00_00_00),
+        // Rank 8
+        Bitboard::new(0),
+        Bitboard::new(0),
+        Bitboard::new(0),
+        Bitboard::new(0),
+        Bitboard::new(0),
+        Bitboard::new(0),
+        Bitboard::new(0),
+        Bitboard::new(0),
+    ]),
+    // Black
+    SquareMap::new([
+        // Rank 1
+        Bitboard::new(0x0),
+        Bitboard::new(0x0),
+        Bitboard::new(0x0),
+        Bitboard::new(0x0),
+        Bitboard::new(0x0),
+        Bitboard::new(0x0),
+        Bitboard::new(0x0),
+        Bitboard::new(0x0),
+        // Rank 2
+        Bitboard::new(0x00_00_00_00_00_00_00_03),
+        Bitboard::new(0x00_00_00_00_00_00_00_07),
+        Bitboard::new(0x00_00_00_00_00_00_00_0E),
+        Bitboard::new(0x00_00_00_00_00_00_00_1C),
+        Bitboard::new(0x00_00_00_00_00_00_00_38),
+        Bitboard::new(0x00_00_00_00_00_00_00_70),
+        Bitboard::new(0x00_00_00_00_00_00_00_E0),
+        Bitboard::new(0x00_00_00_00_00_00_00_C0),
+        // Rank 3
+        Bitboard::new(0x00_00_00_00_00_00_03_03),
+        Bitboard::new(0x00_00_00_00_00_00_07_07),
+        Bitboard::new(0x00_00_00_00_00_00_0E_0E),
+        Bitboard::new(0x00_00_00_00_00_00_1C_1C),
+        Bitboard::new(0x00_00_00_00_00_00_38_38),
+        Bitboard::new(0x00_00_00_00_00_00_70_70),
+        Bitboard::new(0x00_00_00_00_00_00_E0_E0),
+        Bitboard::new(0x00_00_00_00_00_00_C0_C0),
+        // Rank 4
+        Bitboard::new(0x00_00_00_00_00_03_03_03),
+        Bitboard::new(0x00_00_00_00_00_07_07_07),
+        Bitboard::new(0x00_00_00_00_00_0E_0E_0E),
+        Bitboard::new(0x00_00_00_00_00_1C_1C_1C),
+        Bitboard::new(0x00_00_00_00_00_38_38_38),
+        Bitboard::new(0x00_00_00_00_00_70_70_70),
+        Bitboard::new(0x00_00_00_00_00_E0_E0_E0),
+        Bitboard::new(0x00_00_00_00_00_C0_C0_C0),
+        // Rank 5
+        Bitboard::new(0x00_00_00_00_03_03_03_03),
+        Bitboard::new(0x00_00_00_00_07_07_07_07),
+        Bitboard::new(0x00_00_00_00_0E_0E_0E_0E),
+        Bitboard::new(0x00_00_00_00_1C_1C_1C_1C),
+        Bitboard::new(0x00_00_00_00_38_38_38_38),
+        Bitboard::new(0x00_00_00_00_70_70_70_70),
+        Bitboard::new(0x00_00_00_00_E0_E0_E0_E0),
+        Bitboard::new(0x00_00_00_00_C0_C0_C0_C0),
+        // Rank 6
+        Bitboard::new(0x00_00_00_03_03_03_03_03),
+        Bitboard::new(0x00_00_00_07_07_07_07_07),
+        Bitboard::new(0x00_00_00_0E_0E_0E_0E_0E),
+        Bitboard::new(0x00_00_00_1C_1C_1C_1C_1C),
+        Bitboard::new(0x00_00_00_38_38_38_38_38),
+        Bitboard::new(0x00_00_00_70_70_70_70_70),
+        Bitboard::new(0x00_00_00_E0_E0_E0_E0_E0),
+        Bitboard::new(0x00_00_00_C0_C0_C0_C0_C0),
+        // Rank 7
+        Bitboard::new(0x00_00_03_03_03_03_03_03),
+        Bitboard::new(0x00_00_07_07_07_07_07_07),
+        Bitboard::new(0x00_00_0E_0E_0E_0E_0E_0E),
+        Bitboard::new(0x00_00_1C_1C_1C_1C_1C_1C),
+        Bitboard::new(0x00_00_38_38_38_38_38_38),
+        Bitboard::new(0x00_00_70_70_70_70_70_70),
+        Bitboard::new(0x00_00_E0_E0_E0_E0_E0_E0),
+        Bitboard::new(0x00_00_C0_C0_C0_C0_C0_C0),
+        // Rank 8
+        Bitboard::new(0x00_03_03_03_03_03_03_03),
+        Bitboard::new(0x00_07_07_07_07_07_07_07),
+        Bitboard::new(0x00_0E_0E_0E_0E_0E_0E_0E),
+        Bitboard::new(0x00_1C_1C_1C_1C_1C_1C_1C),
+        Bitboard::new(0x00_38_38_38_38_38_38_38),
+        Bitboard::new(0x00_70_70_70_70_70_70_70),
+        Bitboard::new(0x00_E0_E0_E0_E0_E0_E0_E0),
+        Bitboard::new(0x00_C0_C0_C0_C0_C0_C0_C0),
+    ]),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -576,6 +769,25 @@ mod tests {
             let b = S(mg2, eg2);
             let add = S(mg1 - mg2, eg1 - eg2);
             assert_eq!(a - b, add);
+        }
+    }
+
+    #[test]
+    fn pawn_corridor() {
+        for side in [Side::White, Side::Black] {
+            for sq in Bitboard::all() {
+                let mut front_span = sq.as_bb().forward(1, side);
+                front_span |= front_span.forward(1, side);
+                front_span |= front_span.forward(2, side);
+                front_span |= front_span.forward(4, side);
+
+                let corridor = front_span.west(1) | front_span | front_span.east(1);
+
+                assert_eq!(
+                    PAWN_CORRIDOR[side as usize][sq], corridor,
+                    "Wrong pawn corridor; side {side:?} sq {sq}"
+                );
+            }
         }
     }
 }
