@@ -1,7 +1,8 @@
 use crate::{
     eval::{
         eg, mg, EScore, Eval, Score, BISHOP_MOBILITY, BISHOP_PST, KING_PST, KNIGHT_MOBILITY,
-        KNIGHT_PST, PAWN_PST, PIECE_VALUES, QUEEN_PST, ROOK_MOBILITY, ROOK_PST, S,
+        KNIGHT_PST, PASSED_PAWN_ON_RANK, PAWN_PST, PIECE_VALUES, QUEEN_PST, ROOK_MOBILITY,
+        ROOK_PST, S,
     },
     position::Position,
     random::Xoshiro,
@@ -25,6 +26,8 @@ pub struct Trace {
     pub knight_mobility: Array<false, 9>,
     pub bishop_mobility: Array<false, 14>,
     pub rook_mobility: Array<false, 15>,
+
+    pub passed_pawn_on_rank: Array<false, 8>,
 }
 
 impl Default for Trace {
@@ -44,6 +47,8 @@ impl Default for Trace {
             knight_mobility: Array::new("KNIGHT_MOBILITY", &KNIGHT_MOBILITY),
             bishop_mobility: Array::new("BISHOP_MOBILITY", &BISHOP_MOBILITY),
             rook_mobility: Array::new("ROOK_MOBILITY", &ROOK_MOBILITY),
+
+            passed_pawn_on_rank: Array::new("PASSED_PAWN_ON_RANK", &PASSED_PAWN_ON_RANK),
         }
     }
 }
@@ -72,6 +77,7 @@ impl Trace {
         f(Box::new(&self.knight_mobility));
         f(Box::new(&self.bishop_mobility));
         f(Box::new(&self.rook_mobility));
+        f(Box::new(&self.passed_pawn_on_rank));
     }
 }
 
