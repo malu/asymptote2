@@ -1,8 +1,8 @@
 use crate::{
     eval::{
-        eg, mg, EScore, Eval, Score, BISHOP_MOBILITY, BISHOP_PST, KING_PST, KNIGHT_MOBILITY,
-        KNIGHT_PST, PASSED_PAWN_ON_RANK, PAWN_PST, PIECE_VALUES, QUEEN_PST, ROOK_MOBILITY,
-        ROOK_PST, S,
+        eg, mg, EScore, Eval, Score, BISHOP_MOBILITY, BISHOP_PST, DOUBLED_PAWN, KING_PST,
+        KNIGHT_MOBILITY, KNIGHT_PST, PASSED_PAWN_ON_RANK, PAWN_PST, PIECE_VALUES, QUEEN_PST,
+        ROOK_MOBILITY, ROOK_PST, S,
     },
     position::Position,
     random::Xoshiro,
@@ -27,6 +27,7 @@ pub struct Trace {
     pub bishop_mobility: Array<false, 14>,
     pub rook_mobility: Array<false, 15>,
 
+    pub doubled_pawn: Single<true>,
     pub passed_pawn_on_rank: Array<false, 8>,
 }
 
@@ -36,6 +37,7 @@ impl Default for Trace {
             eval: EScore::default(),
             result: 0.,
             phase: 0,
+
             material: Material::default(),
             pawn_pst: SymmetricSquareMap::new("PAWN_PST", &PAWN_PST),
             knight_pst: SymmetricSquareMap::new("KNIGHT_PST", &KNIGHT_PST),
@@ -48,6 +50,7 @@ impl Default for Trace {
             bishop_mobility: Array::new("BISHOP_MOBILITY", &BISHOP_MOBILITY),
             rook_mobility: Array::new("ROOK_MOBILITY", &ROOK_MOBILITY),
 
+            doubled_pawn: Single::new("DOUBLED_PAWN", &DOUBLED_PAWN),
             passed_pawn_on_rank: Array::new("PASSED_PAWN_ON_RANK", &PASSED_PAWN_ON_RANK),
         }
     }
@@ -77,6 +80,7 @@ impl Trace {
         f(Box::new(&self.knight_mobility));
         f(Box::new(&self.bishop_mobility));
         f(Box::new(&self.rook_mobility));
+        f(Box::new(&self.doubled_pawn));
         f(Box::new(&self.passed_pawn_on_rank));
     }
 }
@@ -195,6 +199,80 @@ impl From<&Schemas> for Parameters {
             .collect();
 
         Self { parameters }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Single<const ENABLED: bool> {
+    pub inner: [i8; 2],
+    name: &'static str,
+    source: &'static EScore,
+}
+
+impl<const ENABLED: bool> Single<ENABLED> {
+    fn new(name: &'static str, source: &'static EScore) -> Self {
+        Self {
+            inner: Default::default(),
+            name,
+            source,
+        }
+    }
+}
+
+impl<const ENABLED: bool> Tunable for Single<ENABLED> {
+    fn enabled(&self) -> bool {
+        ENABLED
+    }
+
+    fn compact(&self) -> Vec<i8> {
+        let w = Side::White as usize;
+        let b = Side::Black as usize;
+        vec![self.inner[w] - self.inner[b]]
+    }
+
+    fn schema(&self) -> Box<dyn Schema> {
+        Box::new(SingleSchema {
+            name: self.name,
+            source: self.source,
+        })
+    }
+}
+
+struct SingleSchema {
+    name: &'static str,
+    source: &'static EScore,
+}
+
+impl Schema for SingleSchema {
+    fn num_parameters(&self) -> usize {
+        1
+    }
+
+    fn initial_parameter_values(&self) -> Vec<EScore> {
+        vec![*self.source]
+    }
+
+    fn gradients(
+        &self,
+        _parameters: &[(f32, f32)],
+        trace: &[i8],
+        f: f32,
+        phase: f32,
+        g: &mut [(f32, f32)],
+    ) {
+        let t = trace[0] as f32;
+        g[0].0 += t * f * phase / 62.;
+        g[0].1 += t * f * (62. - phase) / 62.;
+    }
+
+    fn constraints(&self, _parameters: &mut [(f32, f32)]) {}
+
+    fn print(&self, values: &[(f32, f32)]) {
+        println!("#[rustfmt::skip]");
+        println!(
+            "pub const {}: EScore = S({:>4}, {:>4});",
+            self.name, values[0].0 as Score, values[0].1 as Score
+        );
     }
 }
 

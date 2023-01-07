@@ -109,6 +109,9 @@ pub static ROOK_MOBILITY: [EScore; 15] = [
 ];
 
 #[rustfmt::skip]
+pub static DOUBLED_PAWN: EScore = S(  -6,  -40);
+
+#[rustfmt::skip]
 pub static PASSED_PAWN_ON_RANK: [EScore; 8] = [
     S(   0,    0), S(  10,  -15), S(  -3,   -7), S( -16,   17), S(   0,   43), S(  22,   67), S(   0,    0), S(   0,    0),
 ];
@@ -245,6 +248,14 @@ impl Eval {
 
             let doubled = (frontspan & pos.pawns() & us).at_least_one();
             let passed = (corridor & pos.pawns() & them).is_empty();
+
+            if doubled {
+                score += DOUBLED_PAWN;
+                #[cfg(feature = "tune")]
+                {
+                    self.trace.doubled_pawn.inner[side as usize] += 1;
+                }
+            }
 
             if passed && !doubled {
                 let normalized_rank = pawn.normalize(side).rank() as usize;
