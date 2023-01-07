@@ -357,10 +357,6 @@ impl<'a> Thread<'a> {
             return SearchResult::Finished(self.evaluate_current_position(ply));
         }
 
-        let mut best_move = None;
-        let mut best_score = mated_in(ply);
-        let mut result = SearchResult::Finished(best_score);
-
         let entry = self
             .tt
             .get(self.hash(ply), self.position(ply))
@@ -405,27 +401,30 @@ impl<'a> Thread<'a> {
 
         let mut searched_moves = 0;
         let mut bound = UPPER_BOUND;
+        let mut best_move = None;
+        let mut best_score = mated_in(ply);
+        let mut result = SearchResult::Finished(best_score);
         while let Some((mtype, mov)) = movepicker.next(&self.position(ply), &self.history) {
             if !self.position(ply).is_move_legal(mov) {
                 continue;
             }
 
-            let mut extension = 0;
-
             self.make_move(ply, mov);
+
+            let mut extension = 0;
             if self.position(ply + 1).in_check() {
                 extension = 1;
             }
-            let mut score;
 
             let mut reduction = 0;
-            if depth > 2 && mtype == MoveType::Quiet {
+            if depth > 2 && mtype == MoveType::Quiet && best_score > mated_in(MAX_PLY) {
                 reduction +=
                     self.lmr[std::cmp::min(searched_moves, 63)][std::cmp::min(depth, 63) as usize];
 
                 reduction = reduction.clamp(0, depth - 1);
             }
 
+            let mut score;
             if searched_moves == 0 {
                 score = self
                     .search(ply + 1, -window, depth + extension - 1)
