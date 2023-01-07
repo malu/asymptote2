@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    eval::{Eval, Score},
+    eval::{eg, Eval, Score, PIECE_VALUES},
     hash::{Hash, Hashes},
     history::History,
     movegen::{
@@ -608,6 +608,13 @@ impl<'a> Thread<'a> {
                 return result;
             }
 
+            /*
+            let best_capture = self.eval.highest_value_piece(!position.side_to_move());
+            if eval + 200 + best_capture.map_or(0, |p| eg(PIECE_VALUES[p])) < window.alpha() {
+                return SearchResult::Finished(window.alpha());
+            }
+            */
+
             generate_pawn_moves(
                 position,
                 position.pieces(!side)
@@ -623,7 +630,21 @@ impl<'a> Thread<'a> {
             generate_queen_moves(position, position.pieces(!side), &mut moves);
             generate_king_moves(position, position.pieces(!side), &mut moves);
 
-            moves.retain(|mov| position.see_ge(*mov, 0));
+            let mut highest_value_victim = 0;
+            moves.retain(|mov| {
+                let good = position.see_ge(*mov, 0);
+                let victim = mov.capture.map_or(0, |p| eg(PIECE_VALUES[p]));
+                let promotion = mov.promotion.map_or(0, |p| eg(PIECE_VALUES[p]));
+                if good {
+                    highest_value_victim = std::cmp::max(highest_value_victim, victim + promotion);
+                }
+
+                good
+            });
+
+            if eval + 200 + highest_value_victim < window.alpha() {
+                return SearchResult::Finished(window.alpha());
+            }
         }
 
         for &mov in moves.iter() {

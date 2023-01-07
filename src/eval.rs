@@ -316,6 +316,22 @@ impl Eval {
         result
     }
 
+    pub fn highest_value_piece(&self, side: Side) -> Option<Piece> {
+        for piece in [
+            Piece::Queen,
+            Piece::Rook,
+            Piece::Bishop,
+            Piece::Knight,
+            Piece::Pawn,
+        ] {
+            if self.material[side as usize][piece] > 0 {
+                return Some(piece);
+            }
+        }
+
+        None
+    }
+
     // `position` is the position _before_ the move was made
     pub fn make_move(&mut self, position: &Position, mov: Move) {
         let side = position.side_to_move() as usize;
