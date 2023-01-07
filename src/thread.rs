@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    eval::{Eval, Score},
+    eval::{eg, Eval, Score, PIECE_VALUES},
     hash::{Hash, Hashes},
     history::History,
     movegen::{
@@ -623,7 +623,21 @@ impl<'a> Thread<'a> {
             generate_queen_moves(position, position.pieces(!side), &mut moves);
             generate_king_moves(position, position.pieces(!side), &mut moves);
 
-            moves.retain(|mov| position.see_ge(*mov, 0));
+            let mut best_noisy_value = 0;
+            moves.retain(|mov| {
+                let good = position.see_ge(*mov, 0);
+                let victim = mov.capture.map_or(0, |p| eg(PIECE_VALUES[p]));
+                let promotion = mov.promotion.map_or(0, |p| eg(PIECE_VALUES[p]));
+                if good {
+                    best_noisy_value = std::cmp::max(best_noisy_value, victim + promotion);
+                }
+
+                good
+            });
+
+            if eval + 200 + best_noisy_value < window.alpha() {
+                return SearchResult::Finished(window.alpha());
+            }
         }
 
         for &mov in moves.iter() {
