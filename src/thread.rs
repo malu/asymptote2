@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    cmp::Reverse,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use crate::{
     eval::{Eval, Score},
@@ -155,7 +158,7 @@ impl<'a> Thread<'a> {
                     continue;
                 }
 
-                moves.push(mov);
+                moves.push(mov.into());
             }
             moves
         };
@@ -219,7 +222,7 @@ impl<'a> Thread<'a> {
         &mut self,
         mut window: Window,
         depth: Depth,
-        moves: &mut [Move],
+        moves: &mut [RootMove],
     ) -> SearchResult<(Score, Move)> {
         let depth = std::cmp::max(1, depth);
         let ply = 0;
@@ -229,7 +232,8 @@ impl<'a> Thread<'a> {
         let mut best_score = mated_in(ply);
         let mut result = SearchResult::Aborted;
 
-        for (i, &mov) in moves.iter().enumerate() {
+        for (i, root_move) in moves.iter_mut().enumerate() {
+            let mov = root_move.mov;
             // Move legallity was already checked
             let mut extension = 0;
 
@@ -239,6 +243,7 @@ impl<'a> Thread<'a> {
             }
             let mut score;
 
+            let nodes_before = self.nodes;
             if searched_moves == 0 {
                 score = self
                     .search(ply + 1, -window, depth + extension - 1)
@@ -259,6 +264,7 @@ impl<'a> Thread<'a> {
                         .map(|v| -v);
                 }
             }
+            root_move.subtree_size = self.nodes - nodes_before;
 
             self.unmake_move(ply);
             searched_moves += 1;
@@ -266,7 +272,8 @@ impl<'a> Thread<'a> {
             match score {
                 SearchResult::Aborted | SearchResult::Partial(_) => {
                     if let Some(i) = best_move_index {
-                        moves.swap(0, i);
+                        moves[0..i + 1].rotate_right(1);
+                        moves[1..].sort_by_key(|root_move| Reverse(root_move.subtree_size));
                     }
 
                     return result;
@@ -298,7 +305,8 @@ impl<'a> Thread<'a> {
         let result = result.finish();
 
         if let Some(i) = best_move_index {
-            moves.swap(0, i);
+            moves[0..i + 1].rotate_right(1);
+            moves[1..].sort_by_key(|root_move| Reverse(root_move.subtree_size));
         }
 
         result
@@ -983,4 +991,18 @@ fn is_checkmate(position: &Position) -> bool {
     generate_king_moves(position, !position.pieces(side), &mut moves);
 
     !moves.iter().any(|mov| position.is_move_legal(*mov))
+}
+
+struct RootMove {
+    mov: Move,
+    subtree_size: u64,
+}
+
+impl From<Move> for RootMove {
+    fn from(mov: Move) -> Self {
+        Self {
+            mov,
+            subtree_size: 0,
+        }
+    }
 }
