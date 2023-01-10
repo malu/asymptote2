@@ -371,15 +371,21 @@ impl<'a> Thread<'a> {
         let entry = self
             .tt
             .get(self.hash(ply), self.position(ply))
-            .filter(|entry| self.position(ply).is_move_pseudo_legal(entry.best_move));
+            .filter(|entry| self.position(ply).is_move_pseudo_legal(entry.best_move))
+            .filter(|entry| self.position(ply).is_move_legal(entry.best_move));
         if let Some(entry) = entry {
+            let score = entry.score.to_score(ply);
             if entry.depth >= depth && window.is_zero() {
-                let score = entry.score.to_score(ply);
                 if entry.bound & LOWER_BOUND > 0 && score >= window.beta() {
                     return SearchResult::Finished(score);
                 } else if entry.bound & UPPER_BOUND > 0 && score <= window.alpha() {
                     return SearchResult::Finished(score);
                 }
+            }
+
+            if depth == 1 && entry.bound & EXACT_BOUND == EXACT_BOUND {
+                self.copy_pv(ply, entry.best_move);
+                return SearchResult::Finished(score);
             }
         }
 
