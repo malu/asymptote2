@@ -357,6 +357,17 @@ impl<'a> Thread<'a> {
             return SearchResult::Finished(self.evaluate_current_position(ply));
         }
 
+        {
+            // Mate distance pruning
+            // If our know best result (alpha) is better than any mate we could achieve, just
+            // return alpha.
+            let alpha = std::cmp::max(window.alpha(), mated_in(ply));
+            let beta = std::cmp::min(window.beta(), mate_in(ply));
+            if alpha >= beta {
+                return SearchResult::Finished(alpha);
+            }
+        }
+
         let entry = self
             .tt
             .get(self.hash(ply), self.position(ply))
