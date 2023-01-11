@@ -399,6 +399,7 @@ impl<'a> Thread<'a> {
         }
 
         let eval = self.evaluate_current_position(ply);
+
         // Null move pruning
         if depth >= 6
             && !self.position(ply).in_check()
@@ -418,6 +419,15 @@ impl<'a> Thread<'a> {
                     return result;
                 }
             }
+        }
+
+        // Static beta pruning
+        if depth == 1
+            && window.is_zero()
+            && !self.position(ply).in_check()
+            && eval >= window.beta() + 100
+        {
+            return SearchResult::Finished(window.beta());
         }
 
         let killer_moves = self.frame(ply).killer_moves;
