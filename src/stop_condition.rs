@@ -72,7 +72,7 @@ impl TimeManager {
                     black_base_ms.unwrap_or(0)
                 };
                 let to_go = moves_to_go.unwrap_or(40);
-                elapsed_ms > base / to_go
+                elapsed_ms > std::cmp::min(2 * base / to_go, base)
             }
         }
     }
