@@ -41,8 +41,8 @@ pub struct Thread<'a> {
 
     prober: Option<fathom_syzygy::Prober<'a>>,
 
-    pub id: usize,
-    pub threads_total: usize,
+    pub id: u16,
+    pub threads_total: u16,
     abort: &'a AtomicBool,
 }
 
@@ -191,13 +191,14 @@ impl<'a> Thread<'a> {
                     } else {
                         format!("cp {}", score)
                     };
+                    let est_nodes = u128::from(self.nodes) * u128::from(self.threads_total);
                     print!(
                         "info depth {depth} seldepth {seldepth} score {score} time {elapsed} nodes {nodes} nps {nps} tbhits {tbhits} hashfull {hashfull} pv ",
                         seldepth = self.max_ply,
-                        nodes = self.nodes,
+                        nodes = est_nodes,
                         tbhits = self.tb_hits,
                         elapsed = elapsed / 1000,
-                        nps = 1000000 * self.nodes as u128 / std::cmp::max(1, elapsed),
+                        nps = 1000000 * est_nodes / std::cmp::max(1, elapsed),
                         hashfull = self.tt.usage_permille(),
                     );
                     for &mov in self.pv[0].iter() {
