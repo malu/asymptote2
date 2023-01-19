@@ -127,6 +127,11 @@ pub static PAWN_SHIELD_OTHER_FILE: [EScore; 8] = [
     S(  11,    7), S(   8,   -1), S(  -2,    7), S(   3,   -6), S(   5,  -12), S(   0,   -5), S(  -1,   -2), S( -25,   13),
 ];
 
+#[rustfmt::skip]
+pub static PAWN_STORM: [EScore; 8] = [
+    S(   6,   29), S(  -1,   28), S( -25,   -2), S(   0,   -9), S(   6,  -10), S(   8,  -11), S(   2,   -9), S(   2,  -14),
+];
+
 #[derive(Clone, Debug)]
 pub struct Eval {
     material: [PieceMap<u8>; 2],
@@ -324,6 +329,7 @@ impl Eval {
         let mut score = S(0, 0);
         let side = Side::white(WHITE);
         let us = pos.pieces(side);
+        let them = pos.pieces(!side);
 
         let king_sq = pos.king_sq(side);
 
@@ -339,32 +345,65 @@ impl Eval {
             File::H => (File::F, File::G),
         };
 
-        let our_pawns = pos.pawns() & us;
-        let our_pawns_in_front = our_pawns.backward(king_sq.normalize(side).rank() as usize, side);
-        let normalized_our_pawns_in_front = if WHITE {
-            our_pawns_in_front
-        } else {
-            our_pawns_in_front.flip()
-        };
-
-        let pawn_shield = [file, center_neighbor_file, non_center_neighbor_file].map(|file| {
-            let in_front = file.as_bb() & normalized_our_pawns_in_front;
-            let pawn = in_front.lsb_sq();
-            let distance = pawn.map_or(7, |pawn| pawn.rank() as usize);
-            distance
-        });
-
-        score += PAWN_SHIELD_KING_FILE[pawn_shield[0]];
-        score += PAWN_SHIELD_OTHER_FILE[pawn_shield[1]];
-        score += PAWN_SHIELD_OTHER_FILE[pawn_shield[2]];
-
-        #[cfg(feature = "tune")]
+        // Pawn shield
         {
-            self.trace.pawn_shield_king_file.inner[side as usize][pawn_shield[0]] += 1;
-            self.trace.pawn_shield_other_file.inner[side as usize][pawn_shield[1]] += 1;
-            self.trace.pawn_shield_other_file.inner[side as usize][pawn_shield[2]] += 1;
+            let our_pawns = pos.pawns() & us;
+            let our_pawns_in_front =
+                our_pawns.backward(king_sq.normalize(side).rank() as usize, side);
+            let normalized_our_pawns_in_front = if WHITE {
+                our_pawns_in_front
+            } else {
+                our_pawns_in_front.flip()
+            };
+
+            let pawn_shield = [file, center_neighbor_file, non_center_neighbor_file].map(|file| {
+                let in_front = file.as_bb() & normalized_our_pawns_in_front;
+                let pawn = in_front.lsb_sq();
+                let distance = pawn.map_or(7, |pawn| pawn.rank() as usize);
+                distance
+            });
+
+            score += PAWN_SHIELD_KING_FILE[pawn_shield[0]];
+            score += PAWN_SHIELD_OTHER_FILE[pawn_shield[1]];
+            score += PAWN_SHIELD_OTHER_FILE[pawn_shield[2]];
+
+            #[cfg(feature = "tune")]
+            {
+                self.trace.pawn_shield_king_file.inner[side as usize][pawn_shield[0]] += 1;
+                self.trace.pawn_shield_other_file.inner[side as usize][pawn_shield[1]] += 1;
+                self.trace.pawn_shield_other_file.inner[side as usize][pawn_shield[2]] += 1;
+            }
         }
 
+        // Pawn storm
+        {
+            let their_pawns = pos.pawns() & them;
+            let their_pawns_in_front =
+                their_pawns.backward(king_sq.normalize(side).rank() as usize, side);
+            let normalized_their_pawns_in_front = if WHITE {
+                their_pawns_in_front
+            } else {
+                their_pawns_in_front.flip()
+            };
+
+            let pawn_storm = [file, center_neighbor_file, non_center_neighbor_file].map(|file| {
+                let in_front = file.as_bb() & normalized_their_pawns_in_front;
+                let pawn = in_front.lsb_sq();
+                let distance = pawn.map_or(7, |pawn| pawn.rank() as usize);
+                distance
+            });
+
+            score += PAWN_STORM[pawn_storm[0]];
+            score += PAWN_STORM[pawn_storm[1]];
+            score += PAWN_STORM[pawn_storm[2]];
+
+            #[cfg(feature = "tune")]
+            {
+                self.trace.pawn_storm.inner[side as usize][pawn_storm[0]] += 1;
+                self.trace.pawn_storm.inner[side as usize][pawn_storm[1]] += 1;
+                self.trace.pawn_storm.inner[side as usize][pawn_storm[2]] += 1;
+            }
+        }
         score
     }
 
