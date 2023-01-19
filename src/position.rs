@@ -300,7 +300,11 @@ impl Position {
 
             if !castling.is_empty() {
                 write!(result, " {castling}").unwrap();
+            } else {
+                write!(result, " -").unwrap();
             }
+        } else {
+            write!(result, " -").unwrap();
         }
 
         match self.en_passant_file {
