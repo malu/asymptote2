@@ -420,6 +420,14 @@ impl Bitboard {
     pub const fn lsb_bb(self) -> Self {
         Bitboard(self.0 & !(self.0 - 1))
     }
+
+    pub fn lsb_sq(self) -> Option<Square> {
+        Bitboard(self.0 & !(self.0 - 1)).into_iter().next()
+    }
+
+    pub const fn flip(self) -> Self {
+        Bitboard(self.0.swap_bytes())
+    }
 }
 
 impl std::ops::BitAnd for Bitboard {

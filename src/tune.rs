@@ -1,8 +1,8 @@
 use crate::{
     eval::{
         eg, mg, EScore, Eval, Score, BISHOP_MOBILITY, BISHOP_PST, DOUBLED_PAWN, KING_PST,
-        KNIGHT_MOBILITY, KNIGHT_PST, PASSED_PAWN_ON_RANK, PAWN_PST, PIECE_VALUES, QUEEN_PST,
-        ROOK_MOBILITY, ROOK_PST, S,
+        KNIGHT_MOBILITY, KNIGHT_PST, PASSED_PAWN_ON_RANK, PAWN_PST, PAWN_SHIELD_KING_FILE,
+        PAWN_SHIELD_OTHER_FILE, PIECE_VALUES, QUEEN_PST, ROOK_MOBILITY, ROOK_PST, S,
     },
     position::Position,
     random::Xoshiro,
@@ -27,8 +27,11 @@ pub struct Trace {
     pub bishop_mobility: Array<false, 14>,
     pub rook_mobility: Array<false, 15>,
 
-    pub doubled_pawn: Single<true>,
+    pub doubled_pawn: Single<false>,
     pub passed_pawn_on_rank: Array<false, 8>,
+
+    pub pawn_shield_king_file: Array<true, 8>,
+    pub pawn_shield_other_file: Array<true, 8>,
 }
 
 impl Default for Trace {
@@ -52,6 +55,9 @@ impl Default for Trace {
 
             doubled_pawn: Single::new("DOUBLED_PAWN", &DOUBLED_PAWN),
             passed_pawn_on_rank: Array::new("PASSED_PAWN_ON_RANK", &PASSED_PAWN_ON_RANK),
+
+            pawn_shield_king_file: Array::new("PAWN_SHIELD_KING_FILE", &PAWN_SHIELD_KING_FILE),
+            pawn_shield_other_file: Array::new("PAWN_SHIELD_OTHER_FILE", &PAWN_SHIELD_OTHER_FILE),
         }
     }
 }
@@ -82,6 +88,8 @@ impl Trace {
         f(Box::new(&self.rook_mobility));
         f(Box::new(&self.doubled_pawn));
         f(Box::new(&self.passed_pawn_on_rank));
+        f(Box::new(&self.pawn_shield_king_file));
+        f(Box::new(&self.pawn_shield_other_file));
     }
 }
 

@@ -116,6 +116,16 @@ pub static PASSED_PAWN_ON_RANK: [EScore; 8] = [
     S(   0,    0), S(  10,  -15), S(  -3,   -7), S( -16,   17), S(   0,   43), S(  22,   67), S(   0,    0), S(   0,    0),
 ];
 
+#[rustfmt::skip]
+pub static PAWN_SHIELD_KING_FILE: [EScore; 8] = [
+    S(   0,    0), S(  15,    2), S(  12,    6), S(   5,   -5), S(   4,  -11), S(  -3,   -5), S(   0,   -2), S( -33,   16),
+];
+
+#[rustfmt::skip]
+pub static PAWN_SHIELD_OTHER_FILE: [EScore; 8] = [
+    S(  11,    7), S(   8,   -1), S(  -2,    7), S(   3,   -6), S(   5,  -12), S(   0,   -5), S(  -1,   -2), S( -25,   13),
+];
+
 #[derive(Clone, Debug)]
 pub struct Eval {
     material: [PieceMap<u8>; 2],
@@ -161,6 +171,7 @@ impl Eval {
         score += self.mobility::<true>(pos) - self.mobility::<false>(pos);
         score += self.pst::<true>() - self.pst::<false>();
         score += self.pawns::<true>(pos) - self.pawns::<false>(pos);
+        score += self.kings::<true>(pos) - self.kings::<false>(pos);
 
         #[cfg(feature = "tune")]
         {
@@ -272,6 +283,54 @@ impl Eval {
                     }
                 }
             }
+        }
+
+        score
+    }
+
+    fn kings<const WHITE: bool>(&mut self, pos: &Position) -> EScore {
+        let mut score = S(0, 0);
+        let side = Side::white(WHITE);
+        let us = pos.pieces(side);
+
+        let king_sq = pos.king_sq(side);
+
+        let file = king_sq.file();
+        let (center_neighbor_file, non_center_neighbor_file) = match file {
+            File::A => (File::C, File::B),
+            File::B => (File::C, File::A),
+            File::C => (File::D, File::B),
+            File::D => (File::E, File::C),
+            File::E => (File::D, File::F),
+            File::F => (File::E, File::G),
+            File::G => (File::F, File::H),
+            File::H => (File::F, File::G),
+        };
+
+        let our_pawns = pos.pawns() & us;
+        let our_pawns_in_front = our_pawns.backward(king_sq.normalize(side).rank() as usize, side);
+        let normalized_our_pawns_in_front = if WHITE {
+            our_pawns_in_front
+        } else {
+            our_pawns_in_front.flip()
+        };
+
+        let pawn_shield = [file, center_neighbor_file, non_center_neighbor_file].map(|file| {
+            let in_front = file.as_bb() & normalized_our_pawns_in_front;
+            let pawn = in_front.lsb_sq();
+            let distance = pawn.map_or(7, |pawn| pawn.rank() as usize);
+            distance
+        });
+
+        score += PAWN_SHIELD_KING_FILE[pawn_shield[0]];
+        score += PAWN_SHIELD_OTHER_FILE[pawn_shield[1]];
+        score += PAWN_SHIELD_OTHER_FILE[pawn_shield[2]];
+
+        #[cfg(feature = "tune")]
+        {
+            self.trace.pawn_shield_king_file.inner[side as usize][pawn_shield[0]] += 1;
+            self.trace.pawn_shield_other_file.inner[side as usize][pawn_shield[1]] += 1;
+            self.trace.pawn_shield_other_file.inner[side as usize][pawn_shield[2]] += 1;
         }
 
         score
