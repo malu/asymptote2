@@ -113,6 +113,9 @@ pub static ROOK_MOBILITY: [EScore; 15] = [
 pub const DOUBLED_PAWN: EScore = S(  -5,  -35);
 
 #[rustfmt::skip]
+pub const WEAK_PAWN: EScore = S(  -3,   -8);
+
+#[rustfmt::skip]
 pub static PASSED_PAWN_ON_RANK: [EScore; 8] = [
     S(   0,    0), S(   0,   -5), S(  -8,    0), S( -16,   24), S(  -1,   55), S(  22,  114), S(   0,    0), S(   0,    0),
 ];
@@ -296,12 +299,18 @@ impl Eval {
         let us = pos.pieces(side);
         let them = pos.pieces(!side);
 
+        let potential_weak_pawns = pos.pawns() & us // our pawns which
+            & pos.attacks(!side, Piece::Pawn).backward(1, side) // cannot be pushed safely, and
+            & !pos.attacks(!side, Piece::Pawn); // cannot capture
+
         for pawn in pos.pawns() & us {
             let file = pawn.file().as_bb();
             let corridor = PAWN_CORRIDOR[side as usize][pawn];
             let frontspan = file & corridor;
 
             let doubled = (frontspan & pos.pawns() & us).at_least_one();
+            let weak = potential_weak_pawns.contains(pawn)
+                && (PAWN_CORRIDOR[1 - side as usize][pawn] & pos.pawns() & us).is_empty();
             let passed = (corridor & pos.pawns() & them).is_empty();
 
             if doubled {
@@ -309,6 +318,14 @@ impl Eval {
                 #[cfg(feature = "tune")]
                 {
                     self.trace.doubled_pawn.inner[side as usize] += 1;
+                }
+            }
+
+            if weak {
+                score += WEAK_PAWN;
+                #[cfg(feature = "tune")]
+                {
+                    self.trace.weak_pawn.inner[side as usize] += 1;
                 }
             }
 
