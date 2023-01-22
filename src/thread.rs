@@ -448,7 +448,12 @@ impl<'a> Thread<'a> {
             self.make_move(ply, mov);
 
             let mut extension = 0;
-            if self.position(ply + 1).in_check() {
+            if self.position(ply + 1).in_check()
+                && (depth < 5
+                    || mtype == MoveType::TtMove
+                    || mtype == MoveType::GoodNoisy
+                    || mtype != MoveType::BadNoisy && self.position(ply).see_ge(mov, 0))
+            {
                 extension = 1;
             }
 
