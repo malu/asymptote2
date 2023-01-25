@@ -588,7 +588,7 @@ fn parse_rank(c: u8) -> Option<Rank> {
 
 fn parse_promotion_piece(c: u8) -> Option<Piece> {
     match c {
-        b'k' => Some(Piece::Knight),
+        b'n' => Some(Piece::Knight),
         b'b' => Some(Piece::Bishop),
         b'r' => Some(Piece::Rook),
         b'q' => Some(Piece::Queen),
