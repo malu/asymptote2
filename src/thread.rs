@@ -421,6 +421,52 @@ impl<'a> Thread<'a> {
             }
         }
 
+        // ProbCut
+        if depth >= 6 && !self.position(ply).in_check() && window.is_zero() {
+            let mut moves = MoveVec::new();
+            let position = self.position(ply);
+            let side = position.side_to_move();
+            generate_pawn_moves(
+                position,
+                position.pieces(!side)
+                    | side.promotion_rank().as_bb()
+                    | position
+                        .en_passant_sq()
+                        .map_or(Bitboard::empty(), Square::as_bb),
+                &mut moves,
+            );
+            generate_knight_moves(position, position.pieces(!side), &mut moves);
+            generate_bishop_moves(position, position.pieces(!side), &mut moves);
+            generate_rook_moves(position, position.pieces(!side), &mut moves);
+            generate_queen_moves(position, position.pieces(!side), &mut moves);
+            generate_king_moves(position, position.pieces(!side), &mut moves);
+
+            let probcut_window = Window::Zero {
+                alpha: window.alpha() + 200,
+            };
+
+            for mov in moves {
+                if !self.position(ply).is_move_legal(mov) {
+                    continue;
+                }
+
+                if !self.position(ply).see_ge(mov, 0) {
+                    continue;
+                }
+
+                self.make_move(ply, mov);
+                let score = self.search(ply + 1, -probcut_window, depth - 3).map(|v| -v);
+                self.unmake_move(ply);
+                let SearchResult::Finished(score) = score else {
+                    return SearchResult::Aborted;
+                };
+
+                if score >= probcut_window.beta() {
+                    return SearchResult::Finished(window.beta());
+                }
+            }
+        }
+
         // Static beta pruning
         if depth == 1
             && window.is_zero()
