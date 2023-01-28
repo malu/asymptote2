@@ -602,7 +602,7 @@ impl<'a> Thread<'a> {
             self.tt.insert(Entry {
                 best_move,
                 hash,
-                score: tt::Score::from_score(window.alpha(), ply),
+                score: tt::Score::from_score(best_score, ply),
                 bound,
                 depth,
             });
