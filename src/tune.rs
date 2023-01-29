@@ -66,7 +66,8 @@ impl Trace {
     fn new(position: &Position, result: f32) -> Self {
         // TODO run qsearch first
         let mut eval = Eval::from(position);
-        let _ = eval.evaluate(position);
+        // pawn hash doesn't matter and is disabled during tuning anyway
+        let _ = eval.evaluate(position, 0);
         eval.trace.result = result;
 
         eval.trace

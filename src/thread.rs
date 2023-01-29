@@ -96,9 +96,9 @@ impl<'a> Thread<'a> {
             position = position.make_move(*mov);
             hash = self.hashes.compute_hash_for_position(&position);
             if mov.piece == Piece::Pawn || mov.capture.is_some() {
-                self.repetitions.push_irreversible(hash);
+                self.repetitions.push_irreversible(hash.all);
             } else {
-                self.repetitions.push_reversible(hash);
+                self.repetitions.push_reversible(hash.all);
             }
         }
 
@@ -106,7 +106,8 @@ impl<'a> Thread<'a> {
         self.time_manager = TimeManager::new(position.side_to_move(), StopCondition::Infinite);
         self.stack[0] = Frame {
             position,
-            hash,
+            hash: hash.all,
+            pk_hash: hash.pawn_king,
             current_move: None,
             killer_moves: [None, None],
         };
@@ -776,7 +777,7 @@ impl<'a> Thread<'a> {
 
     fn evaluate_current_position(&mut self, ply: i16) -> Score {
         let frame = &self.stack[ply as usize];
-        self.eval.evaluate(&frame.position)
+        self.eval.evaluate(&frame.position, frame.pk_hash)
     }
 
     fn make_move(&mut self, ply: i16, mov: Move) {
@@ -785,13 +786,16 @@ impl<'a> Thread<'a> {
         let frame = &mut self.stack[ply as usize];
         frame.current_move = Some(mov);
 
-        let hash = self.hashes.make_move(&frame.position, mov) ^ frame.hash;
+        let hash_diff = self.hashes.make_move(&frame.position, mov);
+        let hash = frame.hash ^ hash_diff.all;
+        let pk_hash = frame.pk_hash ^ hash_diff.pawn_king;
         self.eval.make_move(&frame.position, mov);
         let position = frame.position.make_move(mov);
 
         if let Some(next_frame) = self.stack.get_mut(1 + ply as usize) {
             next_frame.position = position;
             next_frame.hash = hash;
+            next_frame.pk_hash = pk_hash;
             next_frame.current_move = None;
         }
 
@@ -822,13 +826,16 @@ impl<'a> Thread<'a> {
         let frame = &mut self.stack[ply as usize];
         frame.current_move = None;
 
-        let hash = self.hashes.make_nullmove(&frame.position) ^ frame.hash;
+        let hash_diff = self.hashes.make_nullmove(&frame.position);
+        let hash = frame.hash ^ hash_diff.all;
+        let pk_hash = frame.pk_hash ^ hash_diff.pawn_king;
         self.eval.make_nullmove();
         let position = frame.position.make_nullmove();
 
         if let Some(next_frame) = self.stack.get_mut(1 + ply as usize) {
             next_frame.position = position;
             next_frame.hash = hash;
+            next_frame.pk_hash = pk_hash;
             next_frame.current_move = None;
         }
 
@@ -881,6 +888,7 @@ impl<'a> Thread<'a> {
 struct Frame {
     position: Position,
     hash: Hash,
+    pk_hash: Hash,
     current_move: Option<Move>,
     killer_moves: [Option<Move>; 2],
 }

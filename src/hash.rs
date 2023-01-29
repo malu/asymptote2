@@ -9,6 +9,11 @@ use crate::{
 
 pub type Hash = u64;
 
+pub struct HashPair {
+    pub all: Hash,
+    pub pawn_king: Hash,
+}
+
 #[derive(Clone, Debug)]
 pub struct Hashes {
     pieces: PieceMap<SquareMap<Hash>>,
@@ -51,8 +56,9 @@ impl Hashes {
         }
     }
 
-    pub fn make_move(&self, pos: &Position, mov: Move) -> Hash {
+    pub fn make_move(&self, pos: &Position, mov: Move) -> HashPair {
         let mut hash = 0;
+        let mut pk = 0;
         let side = pos.side_to_move() as usize;
         let us = pos.pieces(pos.side_to_move());
 
@@ -104,6 +110,8 @@ impl Hashes {
             // Remove king
             hash ^= self.pieces[Piece::King][mov.from];
             hash ^= self.color[side][mov.from];
+            pk ^= self.pieces[Piece::King][mov.from];
+            pk ^= self.color[side][mov.from];
 
             // Add rook
             hash ^= self.pieces[Piece::Rook][rook];
@@ -112,6 +120,8 @@ impl Hashes {
             // Add king
             hash ^= self.pieces[Piece::King][king];
             hash ^= self.color[side][king];
+            pk ^= self.pieces[Piece::King][king];
+            pk ^= self.color[side][king];
         } else {
             // Non-castling moves
             if let Some(capture) = mov.capture {
@@ -123,20 +133,34 @@ impl Hashes {
                     // Remove their pawn
                     hash ^= self.pieces[Piece::Pawn][ep];
                     hash ^= self.color[1 - side][ep];
+                    pk ^= self.pieces[Piece::Pawn][ep];
+                    pk ^= self.color[1 - side][ep];
                 } else {
                     // Remove their piece
                     hash ^= self.pieces[capture][mov.to];
                     hash ^= self.color[1 - side][mov.to];
+                    if capture == Piece::Pawn {
+                        pk ^= self.pieces[capture][mov.to];
+                        pk ^= self.color[1 - side][mov.to];
+                    }
                 }
             }
 
             // Remove our piece
             hash ^= self.pieces[mov.piece][mov.from];
             hash ^= self.color[side][mov.from];
+            if mov.piece == Piece::Pawn || mov.piece == Piece::King {
+                pk ^= self.pieces[mov.piece][mov.from];
+                pk ^= self.color[side][mov.from];
+            }
 
             // Add our piece
             hash ^= self.pieces[mov.promotion.unwrap_or(mov.piece)][mov.to];
             hash ^= self.color[side][mov.to];
+            if mov.promotion.is_none() && (mov.piece == Piece::Pawn || mov.piece == Piece::King) {
+                pk ^= self.pieces[mov.piece][mov.to];
+                pk ^= self.color[side][mov.to];
+            }
         }
 
         let mut castling = pos.castling();
@@ -163,12 +187,17 @@ impl Hashes {
         }
 
         hash ^= self.side_to_move;
+        pk ^= self.side_to_move;
 
-        hash
+        HashPair {
+            all: hash,
+            pawn_king: pk,
+        }
     }
 
-    pub fn make_nullmove(&self, pos: &Position) -> Hash {
+    pub fn make_nullmove(&self, pos: &Position) -> HashPair {
         let mut hash = 0;
+        let mut pk = 0;
 
         // Remove current en passant hash
         if let Some(ep) = pos.en_passant_file() {
@@ -176,15 +205,21 @@ impl Hashes {
         }
 
         hash ^= self.side_to_move;
+        pk ^= self.side_to_move;
 
-        hash
+        HashPair {
+            all: hash,
+            pawn_king: pk,
+        }
     }
 
-    pub fn compute_hash_for_position(&self, position: &Position) -> Hash {
+    pub fn compute_hash_for_position(&self, position: &Position) -> HashPair {
         let mut hash = Hash::default();
+        let mut pk = Hash::default();
 
         for sq in position.pawns() {
             hash ^= self.pieces[Piece::Pawn][sq];
+            pk ^= self.pieces[Piece::Pawn][sq];
         }
 
         for sq in position.knights() {
@@ -205,11 +240,18 @@ impl Hashes {
 
         for sq in position.kings() {
             hash ^= self.pieces[Piece::King][sq];
+            pk ^= self.pieces[Piece::King][sq];
         }
 
         for side in [Side::White, Side::Black].into_iter() {
             for sq in position.pieces(side) {
                 hash ^= self.color[side as usize][sq];
+            }
+            for sq in position.pieces(side) & position.pawns() {
+                pk ^= self.color[side as usize][sq];
+            }
+            for sq in position.pieces(side) & position.kings() {
+                pk ^= self.color[side as usize][sq];
             }
         }
 
@@ -233,8 +275,12 @@ impl Hashes {
 
         if position.side_to_move() == Side::White {
             hash ^= self.side_to_move;
+            pk ^= self.side_to_move;
         }
 
-        hash
+        HashPair {
+            all: hash,
+            pawn_king: pk,
+        }
     }
 }

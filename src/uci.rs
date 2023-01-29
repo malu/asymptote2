@@ -188,7 +188,9 @@ pub fn run() {
             }
             Ok(Command::UciNewGame) => {}
             Ok(Command::Eval) => {
-                let eval = Eval::from(&current_position).evaluate(&current_position);
+                // Pass a dummy pawn hash. It does not cause wrong results and is only an
+                // optimization.
+                let eval = Eval::from(&current_position).evaluate(&current_position, 0);
                 println!("Eval: {} centipawns", eval);
             }
             Ok(Command::Move(mov)) => match parse_uci_move(&current_position, mov) {

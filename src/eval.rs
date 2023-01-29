@@ -1,4 +1,5 @@
 use crate::{
+    hash::Hash,
     movegen::{bishop_from, rook_from, Move, KNIGHT_ATTACKS},
     position::Position,
     tune::Trace,
@@ -131,6 +132,8 @@ pub struct Eval {
     material: [PieceMap<u8>; 2],
     pst: [PieceMap<EScore>; 2],
 
+    pk_table: PkTable,
+
     pub trace: Trace,
 }
 
@@ -158,19 +161,48 @@ impl From<&Position> for Eval {
         Self {
             material,
             pst,
+            pk_table: PkTable::new(),
             trace: Trace::default(),
         }
     }
 }
 
 impl Eval {
-    pub fn evaluate(&mut self, pos: &Position) -> Score {
+    pub fn evaluate(&mut self, pos: &Position, pk_hash: Hash) -> Score {
         let mut score = S(0, 0);
 
         score += self.material::<true>() - self.material::<false>();
         score += self.mobility::<true>(pos) - self.mobility::<false>(pos);
         score += self.pst::<true>() - self.pst::<false>();
-        score += self.pawns::<true>(pos) - self.pawns::<false>(pos);
+
+        // Check Pawn-King table match
+        #[cfg(not(feature = "tune"))]
+        {
+            let pawns = pos.pawns();
+            let white = pawns & pos.pieces(Side::White);
+            if let Some(entry) = self.pk_table.get(pk_hash, pawns, white) {
+                score += entry.eval;
+            } else {
+                let pawn_score = self.pawns::<true>(pos) - self.pawns::<false>(pos);
+                score += pawn_score;
+                // Store in Pawn-King table
+                let pawns = pos.pawns();
+                let white = pawns & pos.pieces(Side::White);
+                let entry = PkEntry {
+                    pawns,
+                    white,
+                    eval: pawn_score,
+                };
+                self.pk_table.insert(pk_hash, entry);
+            }
+        }
+
+        #[cfg(feature = "tune")]
+        {
+            let _ = pk_hash;
+            score += self.pawns::<true>(pos) - self.pawns::<false>(pos);
+        }
+
         score += self.kings::<true>(pos) - self.kings::<false>(pos);
 
         #[cfg(feature = "tune")]
@@ -822,6 +854,43 @@ static PAWN_CORRIDOR: [SquareMap<Bitboard>; 2] = [
         Bitboard::new(0x00_C0_C0_C0_C0_C0_C0_C0),
     ]),
 ];
+
+const PAWN_KING_TABLE_SIZE: usize = 2048;
+
+#[derive(Clone, Debug)]
+struct PkTable {
+    entries: Vec<PkEntry>,
+}
+
+impl PkTable {
+    fn new() -> Self {
+        Self {
+            entries: vec![PkEntry::default(); PAWN_KING_TABLE_SIZE],
+        }
+    }
+
+    fn get(&self, pk_hash: Hash, pawns: Bitboard, white: Bitboard) -> Option<&PkEntry> {
+        let i = pk_hash as usize % PAWN_KING_TABLE_SIZE;
+        let entry = &self.entries[i];
+        if entry.pawns == pawns && entry.white == white {
+            Some(entry)
+        } else {
+            None
+        }
+    }
+
+    fn insert(&mut self, pk_hash: Hash, entry: PkEntry) {
+        let i = pk_hash as usize % PAWN_KING_TABLE_SIZE;
+        self.entries[i] = entry;
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+struct PkEntry {
+    pawns: Bitboard,
+    white: Bitboard,
+    eval: EScore,
+}
 
 #[cfg(test)]
 mod tests {
