@@ -363,10 +363,6 @@ impl<'a> Thread<'a> {
             }
         }
 
-        if depth <= 0 {
-            return self.qsearch(ply, window);
-        }
-
         if ply == MAX_PLY {
             return SearchResult::Finished(self.evaluate_current_position(ply));
         }
@@ -397,10 +393,14 @@ impl<'a> Thread<'a> {
                 }
             }
 
-            if depth == 1 && entry.bound & EXACT_BOUND == EXACT_BOUND {
+            if depth == 0 && entry.bound & EXACT_BOUND == EXACT_BOUND {
                 self.copy_pv(ply, entry.best_move);
                 return SearchResult::Finished(score);
             }
+        }
+
+        if depth <= 0 {
+            return self.qsearch(ply, window);
         }
 
         let eval = self.evaluate_current_position(ply);
