@@ -180,6 +180,10 @@ impl<'a> Thread<'a> {
                 break;
             }
 
+            if depth > 4 && moves.len() == 1 {
+                break;
+            }
+
             match self.search_root(Window::full(), depth, &mut moves) {
                 SearchResult::Finished((score, mov)) | SearchResult::Partial((score, mov))
                     if self.id == 0 =>
