@@ -5,7 +5,7 @@ use crate::{
     hash::Hash,
     movegen::Move,
     position::Position,
-    thread::{mate_in, mated_in},
+    thread::{tb_loss_in, tb_win_in},
     types::{Piece, Square},
 };
 
@@ -246,9 +246,9 @@ pub struct Score(i16);
 
 impl Score {
     pub fn from_score(score: i16, ply: i16) -> Self {
-        if score > mate_in(128) {
+        if score > tb_win_in(128) {
             Self(score + ply)
-        } else if score < mated_in(128) {
+        } else if score < tb_loss_in(128) {
             Self(score - ply)
         } else {
             Self(score)
@@ -256,9 +256,9 @@ impl Score {
     }
 
     pub fn to_score(self, ply: i16) -> i16 {
-        if self.0 > mate_in(128) {
+        if self.0 > tb_win_in(128) {
             self.0 - ply
-        } else if self.0 < mated_in(128) {
+        } else if self.0 < tb_loss_in(128) {
             self.0 + ply
         } else {
             self.0
