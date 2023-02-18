@@ -12,6 +12,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct Trace {
     pub eval: EScore,
+    pub sf: f32,
     result: f32,
     pub phase: i16,
 
@@ -32,13 +33,14 @@ pub struct Trace {
 
     pub pawn_shield_king_file: Array<false, 8>,
     pub pawn_shield_other_file: Array<false, 8>,
-    pub pawn_storm: Array<true, 8>,
+    pub pawn_storm: Array<false, 8>,
 }
 
 impl Default for Trace {
     fn default() -> Self {
         Self {
             eval: EScore::default(),
+            sf: 1.,
             result: 0.,
             phase: 0,
 
@@ -112,6 +114,7 @@ trait Schema {
         trace: &[i8],
         f: f32,
         phase: f32,
+        sf: f32,
         g: &mut [(f32, f32)],
     );
     fn constraints(&self, _parameters: &mut [(f32, f32)]);
@@ -142,6 +145,7 @@ struct CompactTrace {
     data: Vec<i8>,
     phase: f32,
     result: f32,
+    sf: f32,
     base_eval: (f32, f32),
 }
 
@@ -158,6 +162,7 @@ impl CompactTrace {
         let mut t = Self {
             data,
             result: trace.result,
+            sf: trace.sf,
             phase: trace.phase as f32,
             base_eval: (0., 0.),
         };
@@ -270,11 +275,12 @@ impl Schema for SingleSchema {
         trace: &[i8],
         f: f32,
         phase: f32,
+        sf: f32,
         g: &mut [(f32, f32)],
     ) {
         let t = trace[0] as f32;
         g[0].0 += t * f * phase / 62.;
-        g[0].1 += t * f * (62. - phase) / 62.;
+        g[0].1 += sf * t * f * (62. - phase) / 62.;
     }
 
     fn constraints(&self, _parameters: &mut [(f32, f32)]) {}
@@ -336,10 +342,11 @@ impl Schema for MaterialSchema {
         trace: &[i8],
         f: f32,
         phase: f32,
+        sf: f32,
         g: &mut [(f32, f32)],
     ) {
         // Only update pawn endgame value
-        g[0].1 += trace[0] as f32 * f * (62. - phase) / 62.;
+        g[0].1 += sf * trace[0] as f32 * f * (62. - phase) / 62.;
 
         // Skip pawns update
         g.iter_mut()
@@ -348,7 +355,7 @@ impl Schema for MaterialSchema {
             .for_each(|(g, t)| {
                 let t = *t as f32;
                 g.0 += t * f * phase / 62.;
-                g.1 += t * f * (62. - phase) / 62.;
+                g.1 += sf * t * f * (62. - phase) / 62.;
             });
     }
 
@@ -459,12 +466,13 @@ impl Schema for SymmetricSquareMapSchema {
         trace: &[i8],
         f: f32,
         phase: f32,
+        sf: f32,
         g: &mut [(f32, f32)],
     ) {
         g.iter_mut().zip(trace).for_each(|(g, t)| {
             let t = *t as f32;
             g.0 += t * f * phase / 62.;
-            g.1 += t * f * (62. - phase) / 62.;
+            g.1 += sf * t * f * (62. - phase) / 62.;
         });
     }
 
@@ -569,12 +577,13 @@ impl<const N: usize> Schema for ArraySchema<N> {
         trace: &[i8],
         f: f32,
         phase: f32,
+        sf: f32,
         g: &mut [(f32, f32)],
     ) {
         g.iter_mut().zip(trace).for_each(|(g, t)| {
             let t = *t as f32;
             g.0 += t * f * phase / 62.;
-            g.1 += t * f * (62. - phase) / 62.;
+            g.1 += sf * t * f * (62. - phase) / 62.;
         });
     }
 
@@ -710,6 +719,7 @@ impl Tuner {
 
         for trace in traces {
             let phase = trace.phase;
+            let sf = trace.sf;
             let r = trace.result;
             let s = sigmoid(k, parameters.eval(trace));
             let grad = -(r - s) * s * (1. - s);
@@ -722,7 +732,7 @@ impl Tuner {
                 let parameters = &parameters.parameters[*offset..*offset + len];
                 let trace = &trace.data[*offset..*offset + len];
                 let g = &mut g[*offset..*offset + len];
-                schema.gradients(parameters, trace, grad, phase, g);
+                schema.gradients(parameters, trace, grad, phase, sf, g);
             }
         }
 
