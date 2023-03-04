@@ -513,6 +513,10 @@ impl<'a> Thread<'a> {
                 reduction +=
                     self.lmr[std::cmp::min(searched_moves, 63)][std::cmp::min(depth, 63) as usize];
 
+                if window.is_zero() {
+                    reduction += 1;
+                }
+
                 reduction = reduction.clamp(0, depth - 1);
             }
 
