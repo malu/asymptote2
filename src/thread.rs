@@ -327,6 +327,8 @@ impl<'a> Thread<'a> {
             return SearchResult::Finished(0);
         }
 
+        self.tt.prefetch(self.hash(ply));
+
         if let Some(prober) = self.prober {
             let position = self.position(ply);
             if position.half_move_clock() == 0

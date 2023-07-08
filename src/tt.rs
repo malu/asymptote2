@@ -138,6 +138,22 @@ impl TranspositionTable {
         })
     }
 
+    pub fn prefetch(&self, hash: Hash) {
+        #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
+        {
+            let index = self.index(hash);
+            unsafe {
+                let data = &mut *self.data.get();
+                let addr = data.as_ptr().offset(index as isize);
+                std::arch::x86_64::_mm_prefetch(addr as *const i8, std::arch::x86_64::_MM_HINT_ET1);
+            }
+        }
+        #[cfg(not(all(target_arch = "x86_64", target_feature = "sse")))]
+        {
+            let _ = hash;
+        }
+    }
+
     fn with_bucket<F, T>(&self, hash: Hash, f: F) -> T
     where
         F: FnOnce(&mut Bucket) -> T,
